@@ -11,6 +11,7 @@ from typing import Tuple, List, Optional
 from random import randrange
 from datetime import datetime
 from time import sleep
+from pathlib import Path
 
 # External libraries
 import pygame
@@ -150,6 +151,40 @@ class MessageToDisplay:
         self.update()
 
 
+class GameSoundsAndMusics:
+    """ Class to implement all the sounds and musics for the game """
+
+    def __init__(self, sounds_location: Path, musics_locations: Path) -> None:
+        """ Class constructor """
+
+        self.sounds_location: Path = sounds_location
+        self.musics_locations: Path = musics_locations
+
+        self.loaded_sounds: List[pygame.mixer.Sound] = []
+
+        self.__init_sounds()
+
+    def __init_sounds(self) -> None:
+        """ Private method to initialize the game sounds """
+
+        for sound in self.sounds_location.glob("*.ogg"):
+            if sound.is_file():
+                self.loaded_sounds.append(pygame.mixer.Sound(sound))
+
+    def get_random_sound(self) -> pygame.mixer.Sound:
+        """ Method to get a random loaded sound """
+
+        return self.loaded_sounds[randrange(0, len(self.loaded_sounds))]
+
+    def play_chosen_music(self, music_name: str) -> None:
+        """ Method that plays the chosen music """
+
+        music_location_path: Path = self.musics_locations / f"{music_name}.ogg"
+        if music_location_path.is_file():
+            pygame.mixer.music.load(str(music_location_path))
+            pygame.mixer.music.play(-1)
+
+
 class Game:
     """ Class to implement the game """
 
@@ -158,7 +193,8 @@ class Game:
 
         # Initialize pygame modules
         pygame.init()
-        
+        pygame.mixer.init()
+
         # Define screen size
         self.screen_width: int = screen_width
         self.screen_height: int = screen_height
@@ -167,9 +203,24 @@ class Game:
         self.window: pygame.surface.Surface = pygame.display.set_mode((self.screen_width, self.screen_height))
         pygame.display.set_caption("Catch me if you can !")
 
+        # Set data folders
+        self.data_location = Path("../data")
+        self.images_location: Path = self.data_location / "images"
+        self.sounds_locations: Path = self.data_location / "sounds"
+        self.musics_locations: Path = self.data_location / "musics"
+
         # Background image
-        self.background_image: str = "../data/ciel.jpg"
-        self.background: pygame.surface.Surface = pygame.image.load(self.background_image).convert()
+        self.background_image: Path = self.images_location / "ciel.jpg"
+        self.background: pygame.surface.Surface = pygame.image.load(str(self.background_image)).convert()
+
+        # Sounds and Musics
+        self.game_sounds_and_musics = GameSoundsAndMusics(
+            sounds_location=self.sounds_locations,
+            musics_locations=self.musics_locations,
+        )
+
+        # Play background music
+        self.game_sounds_and_musics.play_chosen_music("fond_sonore_detente")
 
         # Initialize Sun
         self.sun = Sun(self.screen_width, self.screen_height)
@@ -222,7 +273,8 @@ class Game:
         """ Metod to render elements """
 
         if self.victory:
-            self.message_to_display.displayed_text = "Vous avez terminé le jeu, félicitations ^^"
+            # self.message_to_display.displayed_text = "Vous avez terminé le jeu, félicitations ^^"
+            self.message_to_display.displayed_text = "C'est ta faute, Kev ^^"
             self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
             pygame.display.flip()
             return None
@@ -230,6 +282,9 @@ class Game:
         if self.end_level:
             self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
             pygame.display.flip()
+
+            if not self.end_game:
+                pygame.mixer.Sound.play(self.game_sounds_and_musics.get_random_sound())
 
             sleep(self.message_display_time)
 
