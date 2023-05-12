@@ -151,14 +151,13 @@ class MessageToDisplay:
         self.update()
 
 
-class GameSoundsAndMusics:
-    """ Class to implement all the sounds and musics for the game """
+class GameSounds:
+    """ Class to handle all the sounds and musics for the game """
 
-    def __init__(self, sounds_location: Path, musics_locations: Path) -> None:
+    def __init__(self, sounds_location: Path) -> None:
         """ Class constructor """
 
         self.sounds_location: Path = sounds_location
-        self.musics_locations: Path = musics_locations
 
         self.loaded_sounds: List[pygame.mixer.Sound] = []
 
@@ -176,6 +175,15 @@ class GameSoundsAndMusics:
 
         return self.loaded_sounds[randrange(0, len(self.loaded_sounds))]
 
+
+class GameMusics:
+    """ Class to handle all the musics for the game """
+
+    def __init__(self, musics_locations: Path) -> None:
+        """ Class constructor """
+
+        self.musics_locations: Path = musics_locations
+
     def play_chosen_music(self, music_name: str) -> None:
         """ Method that plays the chosen music """
 
@@ -184,6 +192,9 @@ class GameSoundsAndMusics:
             pygame.mixer.music.load(str(music_location_path))
             pygame.mixer.music.play(-1)
 
+
+# TODO : ajouter vidéo de fin (Takeo Ishi)
+# TODO : ajouter taille variable
 
 class Game:
     """ Class to implement the game """
@@ -194,6 +205,9 @@ class Game:
         # Initialize pygame modules
         pygame.init()
         pygame.mixer.init()
+
+        # Define game clock
+        self.game_clock = pygame.time.Clock()
 
         # Define screen size
         self.screen_width: int = screen_width
@@ -213,14 +227,12 @@ class Game:
         self.background_image: Path = self.images_location / "ciel.jpg"
         self.background: pygame.surface.Surface = pygame.image.load(str(self.background_image)).convert()
 
-        # Sounds and Musics
-        self.game_sounds_and_musics = GameSoundsAndMusics(
-            sounds_location=self.sounds_locations,
-            musics_locations=self.musics_locations,
-        )
+        # Game sounds
+        self.game_sounds = GameSounds(self.sounds_locations)
 
-        # Play background music
-        self.game_sounds_and_musics.play_chosen_music("fond_sonore_detente")
+        # Game musics
+        self.game_musics = GameMusics(self.musics_locations)
+        self.game_musics.play_chosen_music("fond_sonore_detente")
 
         # Initialize Sun
         self.sun = Sun(self.screen_width, self.screen_height)
@@ -235,6 +247,7 @@ class Game:
 
         # Other game variables
         self.level_time_limit: int = 2  # in seconds
+        self.FPS: int = 60  # number of frames per second
 
         # Booleans
         self.running: bool = True
@@ -284,7 +297,7 @@ class Game:
             pygame.display.flip()
 
             if not self.end_game:
-                pygame.mixer.Sound.play(self.game_sounds_and_musics.get_random_sound())
+                pygame.mixer.Sound.play(self.game_sounds.get_random_sound())
 
             sleep(self.message_display_time)
 
@@ -314,6 +327,7 @@ class Game:
             self.process_input()
             self.change_sun_location()
             self.render()
+            self.game_clock.tick(self.FPS)
 
     def quit_game(self) -> None:
         """ Method to correctly quit game """
@@ -325,4 +339,3 @@ if __name__ == "__main__":
     game = Game()
     game.run()
     game.quit_game()
-    
