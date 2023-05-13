@@ -13,8 +13,9 @@ from datetime import datetime
 from time import sleep
 from pathlib import Path
 
-# External libraries
+# External libraries and modules
 import pygame
+from external_modules.pyvidplayer.pyvidplayer import Video
 
 
 # ======================================================================================================================
@@ -75,10 +76,10 @@ class Sun:
         Else the method will return False
         """
 
-        if self._radius > self.sun_reducing_value:
-            self._radius -= self.sun_reducing_value
-            self.update()
-            return True
+        # if self._radius > self.sun_reducing_value:
+        #     self._radius -= self.sun_reducing_value
+        #     self.update()
+        #     return True
 
         return False
 
@@ -192,9 +193,54 @@ class GameMusics:
             pygame.mixer.music.load(str(music_location_path))
             pygame.mixer.music.play(-1)
 
+    @staticmethod
+    def stop_current_playing_music() -> None:
+        """ Static method to stop the music currently played """
 
-# TODO : ajouter vidéo de fin (Takeo Ishi)
-# TODO : ajouter taille variable
+        pygame.mixer.music.stop()
+
+
+class GameVideos:
+    """ Class to handle game videos """
+
+    def __init__(
+            self,
+            videos_location: Path,
+            screen_width: int,
+            screen_height: int,
+            game_window: pygame.surface.Surface
+    ) -> None:
+        """ Class constructor """
+
+        self.videos_location: Path = videos_location
+        self.screen_width: int = screen_width
+        self.screen_height: int = screen_height
+        self.game_window: pygame.surface.Surface = game_window
+
+        self._current_playing_video: Optional[Video] = None
+
+    def load_video(self, video_name: str) -> None:
+        """ Method that plays the chosen video """
+
+        video_location_path: Path = self.videos_location / f"{video_name}.mp4"
+        if video_location_path.is_file():
+            self._current_playing_video = Video(str(video_location_path))
+            self._current_playing_video.set_size((self.screen_width, self.screen_height))
+
+    def play_loaded_video(self) -> None:
+        """ Method that plays the loaded video """
+
+        if self._current_playing_video:
+            self._current_playing_video.draw(self.game_window, (0, 0))
+            pygame.display.flip()
+
+    def stop_current_playing_video(self) -> None:
+        """ Method ot stop current playing video """
+
+        self._current_playing_video.close()
+
+
+# TODO : ajouter taille random pour la soleil
 
 class Game:
     """ Class to implement the game """
@@ -222,6 +268,7 @@ class Game:
         self.images_location: Path = self.data_location / "images"
         self.sounds_locations: Path = self.data_location / "sounds"
         self.musics_locations: Path = self.data_location / "musics"
+        self.videos_locations: Path = self.data_location / "videos"
 
         # Background image
         self.background_image: Path = self.images_location / "ciel.jpg"
@@ -233,6 +280,9 @@ class Game:
         # Game musics
         self.game_musics = GameMusics(self.musics_locations)
         self.game_musics.play_chosen_music("fond_sonore_detente")
+
+        # Game video
+        self.game_videos = GameVideos(self.videos_locations, self.screen_width, self.screen_height, self.window)
 
         # Initialize Sun
         self.sun = Sun(self.screen_width, self.screen_height)
@@ -251,6 +301,7 @@ class Game:
 
         # Booleans
         self.running: bool = True
+        self.running_end_video: bool = False
         self.end_level: bool = False
         self.end_game: bool = False
         self.victory: bool = False
@@ -269,6 +320,7 @@ class Game:
 
             if event_type == pygame.QUIT:
                 self.running = False
+                self.running_end_video = False
                 break
 
             elif event_type == pygame.MOUSEBUTTONDOWN and not self.end_game:
@@ -283,13 +335,20 @@ class Game:
                         self.victory = True
 
     def render(self) -> None:
-        """ Metod to render elements """
+        """ Method to render elements """
 
         if self.victory:
+            pygame.mixer.Sound.play(self.game_sounds.get_random_sound())
             # self.message_to_display.displayed_text = "Vous avez terminé le jeu, félicitations ^^"
             self.message_to_display.displayed_text = "C'est ta faute, Kev ^^"
             self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
             pygame.display.flip()
+
+            sleep(4 * self.message_display_time)
+
+            self.running = False
+            self.running_end_video = True
+
             return None
 
         if self.end_level:
@@ -329,13 +388,31 @@ class Game:
             self.render()
             self.game_clock.tick(self.FPS)
 
+    def launch_end_video(self) -> None:
+        """ Method to launch the end video if the player won the game"""
+
+        if self.victory:
+            # Stop background music
+            self.game_musics.stop_current_playing_music()
+
+            # Load video
+            self.game_videos.load_video("tata")
+
+            # Play video
+            while self.running_end_video:
+                self.process_input()
+                self.game_videos.play_loaded_video()
+                self.game_clock.tick(self.FPS)
+
     def quit_game(self) -> None:
         """ Method to correctly quit game """
 
+        self.game_videos.stop_current_playing_video()
         pygame.quit()
 
 
 if __name__ == "__main__":
     game = Game()
     game.run()
+    game.launch_end_video()
     game.quit_game()
