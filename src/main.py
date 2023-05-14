@@ -7,11 +7,12 @@
 # ======================================================================================================================
 
 # Standard libraries
-from typing import Tuple, List, Optional
-from random import randrange
+from typing import Tuple, List, Optional, Deque
+from random import randrange, shuffle
 from datetime import datetime
 from time import sleep
 from pathlib import Path
+from _collections import deque
 
 # External libraries and modules
 import pygame
@@ -41,6 +42,11 @@ class Sun:
         self.sun_circle: Optional[pygame.rect.Rect] = None
         self.sun_rect: Optional[pygame.rect.Rect] = None
 
+        self._sun_radii: Optional[Deque[int]] = None
+        self._number_of_sun_radii: int = 0
+
+        self.initialize_sun_radii()
+
         self.update()
 
     def update(self) -> None:
@@ -68,20 +74,37 @@ class Sun:
 
         return self._radius
 
-    def change_radius(self) -> bool:
+    def change_radius(self, first_game_phase: bool, second_game_phase: bool) -> bool:
         """
-        Method to reduce Sun size
-        Change is allowed as long as radius is greater than the reducing value.
-        In those cases the method will change the radius and return True
-        Else the method will return False
+        Method to change Sun size
+
+        The way the Sun size is changed depends on the game phase :
+
+        - During the first phase change is allowed as long as radius is greater than the reducing value.
+          In those cases the method will change the radius and return True
+          Else the method will return False
+
+        - During the second phase the size will be picked up from the Sun radii list (o random list of Sun size, between
+          the reducing value and its initial size. In those cases the method will change the radius and return True.
+          When all sizes have been picked up so the method will return False.
         """
 
-        # if self._radius > self.sun_reducing_value:
-        #     self._radius -= self.sun_reducing_value
-        #     self.update()
-        #     return True
+        if first_game_phase and not second_game_phase:
+            if self._radius > self.sun_reducing_value:
+                self._radius -= self.sun_reducing_value
+                self.update()
+                return True
 
-        return False
+            return False
+
+        if not first_game_phase and second_game_phase:
+            try:
+                self._radius = self._sun_radii.popleft()
+                self.update()
+                return True
+
+            except IndexError:
+                return False
 
     @property
     def sun_center_x(self) -> int:
@@ -94,6 +117,20 @@ class Sun:
         """ Property to return the sun vertical position """
 
         return self._center_location[1]
+
+    def initialize_sun_radii(self) -> None:
+        """ Method to initialize Sun radii from start value """
+
+        self._sun_radii = list(
+            range(
+                self.sun_reducing_value,
+                self.radius + 1 - self.sun_reducing_value,
+                self.sun_reducing_value
+            )
+        )
+        shuffle(self._sun_radii)
+        self._sun_radii = deque([self.radius] + self._sun_radii)
+        self._number_of_sun_radii = len(self._sun_radii)
 
 
 class MessageToDisplay:
@@ -119,24 +156,45 @@ class MessageToDisplay:
         self.message_surface: Optional[pygame.surface.Surface] = None
         self.message_rect: Optional[pygame.rect.Rect] = None
 
-        self._displayed_text: str = "Gagné !"
+        self._displayed_text: str = ""
 
         self._center_location: List[int] = [0, 0]
-
-        self.update()
 
     def update(self) -> None:
         """ Private method to initialize message Surface object """
 
-        self.message_surface = self.text_font.render(
-            self._displayed_text,
-            True,
-            self.font_color
-        )
+        if len(self._displayed_text.splitlines()) == 1:
+            self.message_surface = self.text_font.render(self._displayed_text, True, self.font_color)
+            self._center_location = [self.screen_width / 2, self.screen_height / 2]
+            self.message_rect = self.message_surface.get_rect(center=self._center_location)
 
-        self._center_location = [self.screen_width / 2, self.screen_height / 2]
+        else:
+            lines: List[str] = self._displayed_text.splitlines()
 
-        self.message_rect = self.message_surface.get_rect(center=self._center_location)
+            line_surface: pygame.Surface
+            lines_surfaces: List[pygame.Surface] = []
+            line: str
+
+            for line in lines:
+                line_surface = self.text_font.render(line, True, self.font_color)
+                lines_surfaces.append(line_surface)
+
+            # Compute message surface width and height
+            message_surface_width: int = max([line_surface.get_width() for line_surface in lines_surfaces])
+            message_surface_height: int = sum([line_surface.get_height() for line_surface in lines_surfaces])
+
+            # The SRCALPHA parameter enables to draw a transparent Surface
+            self.message_surface = pygame.Surface((message_surface_width, message_surface_height), pygame.SRCALPHA)
+
+            for surface_index, current_line_surface in enumerate(lines_surfaces):
+                message_location: Tuple[int, int] = (
+                    (message_surface_width - current_line_surface.get_width()) / 2,
+                    current_line_surface.get_height() * surface_index
+                )
+                self.message_surface.blit(current_line_surface, message_location)
+
+            self._center_location = [self.screen_width / 2, self.screen_height / 2]
+            self.message_rect = self.message_surface.get_rect(center=self._center_location)
 
     @property
     def displayed_text(self) -> str:
@@ -146,7 +204,7 @@ class MessageToDisplay:
 
     @displayed_text.setter
     def displayed_text(self, new_text: str) -> None:
-        """ Property setter to define new texte to be displayed """
+        """ Property setter to define new text to be displayed """
 
         self._displayed_text = new_text
         self.update()
@@ -183,21 +241,25 @@ class GameMusics:
     def __init__(self, musics_locations: Path) -> None:
         """ Class constructor """
 
-        self.musics_locations: Path = musics_locations
+        self._musics_locations: Path = musics_locations
+        self._is_playing_music: bool = False
 
     def play_chosen_music(self, music_name: str) -> None:
         """ Method that plays the chosen music """
 
-        music_location_path: Path = self.musics_locations / f"{music_name}.ogg"
-        if music_location_path.is_file():
-            pygame.mixer.music.load(str(music_location_path))
-            pygame.mixer.music.play(-1)
+        if not self._is_playing_music:
+            music_location_path: Path = self._musics_locations / f"{music_name}.ogg"
+            if music_location_path.is_file():
+                pygame.mixer.music.load(str(music_location_path))
+                pygame.mixer.music.play(-1)
+                self._is_playing_music = True
 
-    @staticmethod
-    def stop_current_playing_music() -> None:
+    def stop_current_playing_music(self) -> None:
         """ Static method to stop the music currently played """
 
-        pygame.mixer.music.stop()
+        if self._is_playing_music:
+            pygame.mixer.music.stop()
+            self._is_playing_music = False
 
 
 class GameVideos:
@@ -237,10 +299,9 @@ class GameVideos:
     def stop_current_playing_video(self) -> None:
         """ Method ot stop current playing video """
 
-        self._current_playing_video.close()
+        if self._current_playing_video:
+            self._current_playing_video.close()
 
-
-# TODO : ajouter taille random pour la soleil
 
 class Game:
     """ Class to implement the game """
@@ -279,7 +340,6 @@ class Game:
 
         # Game musics
         self.game_musics = GameMusics(self.musics_locations)
-        self.game_musics.play_chosen_music("fond_sonore_detente")
 
         # Game video
         self.game_videos = GameVideos(self.videos_locations, self.screen_width, self.screen_height, self.window)
@@ -293,6 +353,7 @@ class Game:
 
         # Initialize message to user
         self.message_to_display = MessageToDisplay(self.screen_width, self.screen_height)
+        self.message_to_display.displayed_text = "Gagné !"
         self.message_display_time: int = 1  # in seconds
 
         # Other game variables
@@ -304,7 +365,16 @@ class Game:
         self.running_end_video: bool = False
         self.end_level: bool = False
         self.end_game: bool = False
+        self.first_game_phase: bool = True
+        self.second_game_phase: bool = False
         self.victory: bool = False
+
+    def __initialize_some_games_booleans(self) -> None:
+        """ Method to initialize some game booleans """
+
+        self.end_level = False
+        self.end_game = False
+        self.victory = False
 
     @staticmethod
     def __does_point_belong_to_circle(current_point: Tuple[int, int], sun_instance: Sun) -> bool:
@@ -329,33 +399,70 @@ class Game:
                 if self.__does_point_belong_to_circle(mouse_center_location, self.sun):
 
                     self.end_level = True
-                    has_radius_changed: bool = self.sun.change_radius()
+                    has_radius_changed: bool = self.sun.change_radius(self.first_game_phase, self.second_game_phase)
 
                     if not has_radius_changed:
                         self.victory = True
+
+                        if self.second_game_phase:
+                            self.second_game_phase = False
+
+                        if self.first_game_phase:
+                            self.first_game_phase = False
+                            self.second_game_phase = True
 
     def render(self) -> None:
         """ Method to render elements """
 
         if self.victory:
-            pygame.mixer.Sound.play(self.game_sounds.get_random_sound())
-            # self.message_to_display.displayed_text = "Vous avez terminé le jeu, félicitations ^^"
-            self.message_to_display.displayed_text = "C'est ta faute, Kev ^^"
-            self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
-            pygame.display.flip()
 
-            sleep(4 * self.message_display_time)
+            if not self.first_game_phase and self.second_game_phase:
+            # if self.first_game_phase and self.second_game_phase:
+                self.message_to_display.displayed_text = "\n".join(
+                    [
+                        "Tu as terminé le jeu, félicitations ^^",
+                        "... enfin, peut-être :D",
+                        "On recommence ?"
+                    ]
+                )
+                self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
+                pygame.display.flip()
 
-            self.running = False
-            self.running_end_video = True
+                sleep(4 * self.message_display_time)
 
-            return None
+                self.game_musics.play_chosen_music("fond_sonore_detente")
+                # self.sun.change_radius(self.first_game_phase, self.second_game_phase)
+                # self.first_game_phase = False
+                self.__initialize_some_games_booleans()
+                self.message_to_display.displayed_text = "Gagné !"
+
+                self.last_sun_location_update = datetime.now()
+
+                return None
+
+            elif not self.first_game_phase and not self.second_game_phase:
+                pygame.mixer.Sound.play(self.game_sounds.get_random_sound())
+                self.message_to_display.displayed_text = "\n".join(
+                    [
+                        "Félicitations : cette fois-ci tu as VRAIMENT terminé le jeu ^^",
+                        "Voici ta récompense (c'est ta faute, Kev ^^) !"
+                    ]
+                )
+                self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
+                pygame.display.flip()
+
+                sleep(4 * self.message_display_time)
+
+                self.running = False
+                self.running_end_video = True
+
+                return None
 
         if self.end_level:
             self.window.blit(self.message_to_display.message_surface, self.message_to_display.message_rect)
             pygame.display.flip()
 
-            if not self.end_game:
+            if not self.end_game and self.second_game_phase:
                 pygame.mixer.Sound.play(self.game_sounds.get_random_sound())
 
             sleep(self.message_display_time)
@@ -407,6 +514,7 @@ class Game:
     def quit_game(self) -> None:
         """ Method to correctly quit game """
 
+        self.game_musics.stop_current_playing_music()
         self.game_videos.stop_current_playing_video()
         pygame.quit()
 
