@@ -417,7 +417,6 @@ class Game:
         if self.victory:
 
             if not self.first_game_phase and self.second_game_phase:
-            # if self.first_game_phase and self.second_game_phase:
                 self.message_to_display.displayed_text = "\n".join(
                     [
                         "Tu as terminé le jeu, félicitations ^^",
@@ -431,12 +430,13 @@ class Game:
                 sleep(4 * self.message_display_time)
 
                 self.game_musics.play_chosen_music("fond_sonore_detente")
-                # self.sun.change_radius(self.first_game_phase, self.second_game_phase)
-                # self.first_game_phase = False
-                self.__initialize_some_games_booleans()
+
                 self.message_to_display.displayed_text = "Gagné !"
 
+                self.sun.change_radius(self.first_game_phase, self.second_game_phase)
                 self.last_sun_location_update = datetime.now()
+
+                self.__initialize_some_games_booleans()
 
                 return None
 
@@ -444,7 +444,8 @@ class Game:
                 pygame.mixer.Sound.play(self.game_sounds.get_random_sound())
                 self.message_to_display.displayed_text = "\n".join(
                     [
-                        "Félicitations : cette fois-ci tu as VRAIMENT terminé le jeu ^^",
+                        "Félicitations !!!",
+                        "Cette fois tu as VRAIMENT terminé le jeu ^^",
                         "Voici ta récompense (c'est ta faute, Kev ^^) !"
                     ]
                 )
